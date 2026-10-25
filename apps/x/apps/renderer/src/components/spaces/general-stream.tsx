@@ -20,6 +20,7 @@ import { useSpaceNames, type OrgWithSpaces } from '@/hooks/use-spaces'
 import { subscribeComposeInsert } from '@/lib/spaces-compose'
 import { applyReaction, dayKey, formatDayLabel, isContinuation, threadLabelOf } from '@/lib/spaces-conventions'
 import { useStreamView } from '@/lib/spaces-stream-view'
+import { requestJump } from '@/lib/spaces-jump'
 import { consumeJump, jumpFailureMessage, resolveJumpOffset, scrollToMessage, subscribeJump, type JumpAnchor } from '@/lib/spaces-jump'
 import { PollDialogHost } from '@/components/spaces/poll-dialog'
 import { applyPollVote, myPollVotes, postPoll } from '@/lib/spaces-poll'
@@ -144,19 +145,30 @@ export function GeneralStream({
     // The plain-text faces (quotes, titles, copies) name a space token by its current name.
     const spaceNames = useSpaceNames(org.id)
 
-    // The inline view (2026-10-25): every reply shows in the stream under a
-    // line naming its thread, and Reply writes here instead of opening it.
-    const inline = useStreamView() === 'inline'
+    // Replies inline (2026-10-25, this space's setting): there are no threads
+    // here. Every reply shows in the stream under a line quoting what it
+    // answers, Reply writes here, and no chip or pane exists.
+    const inline = useStreamView(org.id, space.id) === 'inline'
     const [replyingTo, setReplyingTo] = useState<{ rootMessageId: string; label: string } | null>(null)
     useEffect(() => {
         if (!inline) setReplyingTo(null)
     }, [inline, org.id, space.id])
-    /** A thread's name: its discussion title, else its root's first line, else a placeholder. */
-    const threadLineFor = (rootMessageId: string): string => {
+    /** What a reply quotes: the discussion's title, else the root's first line, with its author when known. */
+    const quoteFor = (rootMessageId: string): { author?: string; label: string } => {
         const topic = stream.topicsByRoot.get(rootMessageId)
         const root = stream.messages.find((m) => m.id === rootMessageId) ?? stream.threadRoots.get(rootMessageId)
-        const label = topic ? topic.title : root && !root.deletedAt ? threadLabelOf(root.body) : 'a thread'
-        return resolveMentions(label, memberNames, spaceNames)
+        const label = topic ? topic.title : root ? (root.deletedAt ? 'a deleted message' : threadLabelOf(root.body)) : 'an earlier message'
+        const author = root ? memberNames.get(root.author.memberId) : undefined
+        return { ...(author ? { author } : {}), label: resolveMentions(label, memberNames, spaceNames) }
+    }
+    const threadLineFor = (rootMessageId: string): string => {
+        const quote = quoteFor(rootMessageId)
+        return quote.author ? `${quote.author}: ${quote.label}` : quote.label
+    }
+    /** Clicking a reply's quote lands on the message it answers, in this stream (a pane would be a thread). */
+    const jumpToQuoted = (rootMessageId: string) => {
+        const root = stream.messages.find((m) => m.id === rootMessageId) ?? stream.threadRoots.get(rootMessageId)
+        requestJump({ topicId: STREAM_READ_KEY, messageId: rootMessageId, ...(root ? { offset: root.offset } : {}) })
     }
 
     // "New" divider: snapshot the read mark when the stream opens; mark read
@@ -570,7 +582,7 @@ export function GeneralStream({
 
     const retryFailed = (message: spaces.Message) => {
         removeStreamMessage(org.id, space.id, message.id)
-        if (message.threadRoot !== undefined) postInlineReply(org, space, { rootMessageId: message.threadRoot, label: threadLineFor(message.threadRoot) }, message.body)
+        if (message.threadRoot !== undefined) postInlineReply(org, space, { rootMessageId: message.threadRoot, label: quoteFor(message.threadRoot).label }, message.body)
         else void postToStream(message.body)
     }
     const discardFailed = (message: spaces.Message) => removeStreamMessage(org.id, space.id, message.id)
@@ -582,6 +594,7 @@ export function GeneralStream({
     const replyInThread = (parent: spaces.Message) => {
         const rootMessageId = parent.threadRoot ?? parent.id
         if (inline) setReplyingTo({ rootMessageId, label: threadLineFor(rootMessageId) })
+        // (threadLineFor reads "Author: first line", what the bar above the box shows.)
         else onOpenThread(rootMessageId)
     }
 
@@ -1003,9 +1016,10 @@ export function GeneralStream({
     visibleMessages.forEach((message) => {
         drawLinesBefore(message.offset)
         // Deleted messages disappear — unless a thread grew from one, which
-        // keeps a tombstone row so the thread stays reachable.
-        const thread = threadRowFor(message)
-        if (message.deletedAt && !thread) return
+        // keeps a tombstone row so the thread stays reachable (inline: so the
+        // replies quoting it have somewhere to land).
+        const thread = inline ? null : threadRowFor(message)
+        if (message.deletedAt && !thread && !(inline && (message.replyCount ?? 0) > 0)) return
         const day = dayKey(message.postedAt)
         if (day !== prevDay) {
             rows.push(<DayDivider key={`day:${day}`} label={formatDayLabel(message.postedAt)} />)
@@ -1030,7 +1044,8 @@ export function GeneralStream({
                 spaceNames={spaceNames}
                 continuation={continuation}
                 thread={thread}
-                inThread={message.threadRoot !== undefined && !continuation ? { label: threadLineFor(message.threadRoot) } : null}
+                inline={inline}
+                inThread={message.threadRoot !== undefined && !continuation ? { ...quoteFor(message.threadRoot), onClick: () => jumpToQuoted(message.threadRoot!) } : null}
                 threadOpen={!!thread && thread.rootMessageId === openThreadId}
                 arriving={arrivingIds.has(message.id)}
                 selfMemberId={org.memberId}
@@ -1228,7 +1243,7 @@ export function GeneralStream({
             {writable && replyingTo && (
                 <div className="mx-4 mb-1 flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground">
                     <CornerDownRight className="size-3 shrink-0" aria-hidden />
-                    <span className="min-w-0 flex-1 truncate">Replying in <span className="font-medium text-foreground">{replyingTo.label}</span></span>
+                    <span className="min-w-0 flex-1 truncate">Replying to <span className="font-medium text-foreground">{replyingTo.label}</span></span>
                     <button type="button" aria-label="Cancel reply" className="shrink-0 rounded p-0.5 hover:bg-background hover:text-foreground" onClick={() => setReplyingTo(null)}>
                         <X className="size-3.5" />
                     </button>

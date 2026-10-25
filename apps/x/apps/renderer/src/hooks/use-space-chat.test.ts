@@ -282,7 +282,7 @@ describe('stream store — the inline view (2026-10-25)', () => {
 
     it('reads with replies, takes live replies, and fetches a root it cannot name', async () => {
         const view = await import('@/lib/spaces-stream-view')
-        view.setStreamView('inline')
+        view.setStreamView('org', 'space', 'inline')
         try {
             const base = invoke.getMockImplementation()!
             invoke.mockImplementation(async (channel: string, args: { messageId?: string }) =>
@@ -296,7 +296,7 @@ describe('stream store — the inline view (2026-10-25)', () => {
             await act(async () => live({ type: 'message', message: reply(102, 'm95') }))
             expect(invoke.mock.calls.filter(([c]) => c === 'spaces:getMessage')).toHaveLength(1)
         } finally {
-            view.setStreamView('threads')
+            view.setStreamView('org', 'space', 'threads')
         }
     })
 
@@ -311,10 +311,10 @@ describe('stream store — the inline view (2026-10-25)', () => {
         const view = await import('@/lib/spaces-stream-view')
         const { hook } = await open()
         const before = listStreamCalls().length
-        await act(async () => view.setStreamView('inline'))
+        await act(async () => view.setStreamView('org', 'space', 'inline'))
         expect(listStreamCalls().length).toBe(before + 1)
         expect(listStreamCalls().at(-1)).toMatchObject({ replies: true })
-        await act(async () => view.setStreamView('threads'))
+        await act(async () => view.setStreamView('org', 'space', 'threads'))
         expect(listStreamCalls().length).toBe(before + 2)
         expect(listStreamCalls().at(-1)).not.toHaveProperty('replies')
         expect(ids(hook.result.current.messages)).toEqual(ids(range(91, 100)))

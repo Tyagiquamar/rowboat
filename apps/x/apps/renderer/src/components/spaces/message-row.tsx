@@ -142,7 +142,7 @@ export interface ThreadRowData {
 }
 
 function MessageRowImpl({
-    message, memberNames, spaceNames, continuation, thread, inThread, threadOpen, arriving, onOpenThread, onPrefetchThread, onOpenAgentChat, onOpenResponseChat, onStopAgent, onReplyInThread, onAskRowboat, onCopyLink, onReact, onDelete, onEdit, onQuoteReply, onForward, onToggleSave, saved, onRetryFailed, onDiscardFailed, onVotePoll, onRemovePollVote, onEndPoll, dense, selfMemberId, orgId, visible,
+    message, memberNames, spaceNames, continuation, thread, inline, inThread, threadOpen, arriving, onOpenThread, onPrefetchThread, onOpenAgentChat, onOpenResponseChat, onStopAgent, onReplyInThread, onAskRowboat, onCopyLink, onReact, onDelete, onEdit, onQuoteReply, onForward, onToggleSave, saved, onRetryFailed, onDiscardFailed, onVotePoll, onRemovePollVote, onEndPoll, dense, selfMemberId, orgId, visible,
 }: {
     message: spaces.Message & { pending?: boolean; failed?: boolean }
     orgId?: string
@@ -156,10 +156,16 @@ function MessageRowImpl({
     /** Present when a thread hangs under this message (stream only). */
     thread?: ThreadRowData | null
     /**
-     * The inline view (2026-10-25): this reply shows in the stream, and the
-     * line above it names its thread, Discord-reply style; clicking opens it.
+     * The space shows replies inline (2026-10-25): there are no threads here,
+     * so Reply is plain Reply and nothing opens a pane.
      */
-    inThread?: { label: string } | null
+    inline?: boolean
+    /**
+     * Inline, a reply's line quoting what it answers, Discord-reply style:
+     * the author and first line of the message it replies to (or the
+     * discussion's title); clicking lands on that message in the stream.
+     */
+    inThread?: { author?: string; label: string; onClick: () => void } | null
     // Spaces redesign (2026-10-21): the reply line stays tinted while its
     // thread is the one open beside the stream, so the reader sees which
     // root the pane belongs to.
@@ -343,11 +349,11 @@ function MessageRowImpl({
             )}
             <div className="min-w-0 flex-1">
                 {inThread && message.threadRoot !== undefined && (
-                    <button type="button" title="Open the thread" className="flex max-w-full items-center gap-1 text-xs text-muted-foreground hover:text-[var(--stream-link)]"
-                        onMouseEnter={() => onPrefetchThread?.(message.threadRoot!)} onClick={() => onOpenThread?.(message.threadRoot!)}>
+                    <button type="button" title="Go to the message this replies to" className="flex max-w-full items-center gap-1 text-xs text-muted-foreground hover:text-[var(--stream-link)]"
+                        onClick={inThread.onClick}>
                         <CornerDownRight className="size-3 shrink-0" aria-hidden />
-                        <span className="shrink-0">In</span>{' '}
-                        <span className="truncate font-medium">{inThread.label}</span>
+                        {inThread.author && <span className="shrink-0 font-medium">{inThread.author}</span>}{' '}
+                        <span className="truncate">{inThread.label}</span>
                     </button>
                 )}
                 {!continuation && (
@@ -571,7 +577,7 @@ function MessageRowImpl({
                         // and a bare glyph made people hunt for it.
                         <button
                             type="button"
-                            title={thread && thread.replyCount > 0 ? 'Open thread' : 'Reply in thread'}
+                            title={inline ? 'Reply' : thread && thread.replyCount > 0 ? 'Open thread' : 'Reply in thread'}
                             onClick={() => (thread && thread.replyCount > 0 && onOpenThread ? onOpenThread(thread.rootMessageId) : onReplyInThread(message))}
                             className={cn('inline-flex h-8 items-center gap-1.5 rounded-[7px] px-2 text-xs font-medium text-muted-foreground', ICON_HOVER)}
                         >
@@ -694,7 +700,7 @@ function MessageRowImpl({
                     <ContextMenuItem
                         onSelect={() => (thread && thread.replyCount > 0 && onOpenThread ? onOpenThread(thread.rootMessageId) : onReplyInThread(message))}
                     >
-                        <MessageSquare className="size-3.5 mr-2" /> {thread && thread.replyCount > 0 ? 'Open thread' : 'Reply in thread'}
+                        <MessageSquare className="size-3.5 mr-2" /> {inline ? 'Reply' : thread && thread.replyCount > 0 ? 'Open thread' : 'Reply in thread'}
                     </ContextMenuItem>
                 )}
                 {canQuote && (
@@ -785,7 +791,9 @@ export const MessageRow = memo(MessageRowImpl, (prev: MessageRowProps, next: Mes
     prev.dense === next.dense &&
     prev.saved === next.saved &&
     prev.threadOpen === next.threadOpen &&
+    prev.inline === next.inline &&
     prev.inThread?.label === next.inThread?.label &&
+    prev.inThread?.author === next.inThread?.author &&
     prev.arriving === next.arriving &&
     prev.memberNames === next.memberNames &&
     prev.spaceNames === next.spaceNames &&

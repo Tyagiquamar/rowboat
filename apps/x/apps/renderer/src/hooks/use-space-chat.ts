@@ -23,14 +23,14 @@ function key(orgId: string, spaceId: string): string {
 }
 
 /**
- * The inline view (2026-10-25) is its own window of the same space: roots
- * and every reply, by offset. Keyed apart, so neither view's pages, cache or
- * paging edges leak into the other's.
+ * A space shown inline (2026-10-25) has its own window: roots and every
+ * reply, by offset. Keyed apart, so neither view's pages, cache or paging
+ * edges leak into the other's.
  */
+const inlineView = (orgId: string, spaceId: string): boolean => getStreamView(orgId, spaceId) === 'inline'
 function streamKey(orgId: string, spaceId: string): string {
-    return getStreamView() === 'inline' ? `${key(orgId, spaceId)}#inline` : key(orgId, spaceId)
+    return inlineView(orgId, spaceId) ? `${key(orgId, spaceId)}#inline` : key(orgId, spaceId)
 }
-const inlineView = (): boolean => getStreamView() === 'inline'
 
 // ---------------------------------------------------------------------------
 // The stream
@@ -203,10 +203,11 @@ function persistStream(k: string): void {
 /** Keys painted from the cache and not yet confirmed by the org. */
 const streamCacheOnly = new Set<string>()
 
-// A view switch (2026-10-25): the window being switched to missed every live
-// event while the other view was on, so it reads as unconfirmed and refetches.
-subscribeStreamView(() => {
-    for (const k of streamState.keys()) if (k.endsWith('#inline') === inlineView()) streamCacheOnly.add(k)
+// A space's view switch (2026-10-25): the window being switched to missed
+// every live event while the other was on, so it reads as unconfirmed and refetches.
+subscribeStreamView((orgId, spaceId) => {
+    const k = streamKey(orgId, spaceId)
+    if (streamState.has(k)) streamCacheOnly.add(k)
     emitStream()
 })
 
@@ -262,7 +263,7 @@ async function loadStream(orgId: string, spaceId: string): Promise<void> {
         // older pages the reader scrolled to stay put, hasMore keeps describing
         // OUR oldest edge, and optimistic pending/failed rows the response
         // doesn't already contain are carried over.
-        const res = await window.ipc.invoke('spaces:listStream', { orgId, spaceId, ...(inlineView() ? { replies: true } : {}) })
+        const res = await window.ipc.invoke('spaces:listStream', { orgId, spaceId, ...(inlineView(orgId, spaceId) ? { replies: true } : {}) })
         const prev = streamState.get(k)
         streamCacheOnly.delete(k)
         // The page carries our stream mark — the earliest word on it when a
@@ -312,7 +313,7 @@ export async function loadOlderStreamMessages(orgId: string, spaceId: string): P
     olderLoading.add(k)
     setStream(k, { loadingOlder: true })
     try {
-        const res = await window.ipc.invoke('spaces:listStream', { orgId, spaceId, beforeOffset: oldest.offset, ...(inlineView() ? { replies: true } : {}) })
+        const res = await window.ipc.invoke('spaces:listStream', { orgId, spaceId, beforeOffset: oldest.offset, ...(inlineView(orgId, spaceId) ? { replies: true } : {}) })
         const cur = streamState.get(k)
         // A jump swapped the window meanwhile: this page continues the one that left.
         if (!cur?.messages.some((m) => m.id === oldest.id)) {
@@ -352,7 +353,7 @@ function newestSettled(messages: readonly ChatMessage[] | undefined): ChatMessag
  */
 export async function loadStreamAround(orgId: string, spaceId: string, offset: number): Promise<void> {
     const k = streamKey(orgId, spaceId)
-    const res = await window.ipc.invoke('spaces:listStream', { orgId, spaceId, aroundOffset: offset, ...(inlineView() ? { replies: true } : {}) })
+    const res = await window.ipc.invoke('spaces:listStream', { orgId, spaceId, aroundOffset: offset, ...(inlineView(orgId, spaceId) ? { replies: true } : {}) })
     const prev = streamState.get(k)
     streamCacheOnly.delete(k)
     noteStreamReadOffset(orgId, spaceId, res.readOffset)
@@ -380,7 +381,7 @@ export async function loadNewerStreamMessages(orgId: string, spaceId: string): P
     if (!newest || !state?.hasMoreAfter || newerLoading.has(k)) return
     newerLoading.add(k)
     try {
-        const res = await window.ipc.invoke('spaces:listStream', { orgId, spaceId, afterOffset: newest.offset, ...(inlineView() ? { replies: true } : {}) })
+        const res = await window.ipc.invoke('spaces:listStream', { orgId, spaceId, afterOffset: newest.offset, ...(inlineView(orgId, spaceId) ? { replies: true } : {}) })
         const cur = streamState.get(k)
         // A jump swapped the window meanwhile (to latest, or around another row): this page continues the one that left.
         if (!cur?.hasMoreAfter || !cur.messages.some((m) => m.id === newest.id)) return
@@ -430,8 +431,8 @@ export function updateStreamMessage(orgId: string, spaceId: string, message: spa
  * never comes) and the dedupe makes whichever copy arrives second a no-op.
  */
 export function ingestStreamMessage(orgId: string, spaceId: string, message: spaces.Message): void {
-    // Replies stay in their threads, except in the inline view (2026-10-25).
-    if (message.threadRoot !== undefined && !inlineView()) return
+    // Replies stay in their threads, except in a space shown inline (2026-10-25).
+    if (message.threadRoot !== undefined && !inlineView(orgId, spaceId)) return
     const k = streamKey(orgId, spaceId)
     const state = streamState.get(k)
     if (!state) return
@@ -604,7 +605,7 @@ function wireBus(): void {
                 // the count BEFORE this reply), then bump the chip.
                 ingestThreadReply(event.orgId, frame.spaceId, message)
                 noteReplyActivity(event.orgId, frame.spaceId, message)
-                if (inlineView()) {
+                if (inlineView(event.orgId, frame.spaceId)) {
                     ingestStreamMessage(event.orgId, frame.spaceId, message)
                     void noteThreadRoot(event.orgId, frame.spaceId, message.threadRoot)
                 }
@@ -726,7 +727,7 @@ const watched = new Set<string>()
 /** The stream for one space: roots + annotations, kept live. */
 export function useStream(orgId: string, spaceId: string): StreamState {
     // A view switch (2026-10-25) reads the other view's window, so it re-runs the open below.
-    const view = useStreamView()
+    const view = useStreamView(orgId, spaceId)
     // Before the snapshot read, not in an effect: a space with a persisted
     // tail must paint messages in its FIRST frame (the Slack feel). The call
     // is idempotent and never emits, so it is safe during render.

@@ -1,50 +1,62 @@
 import { useSyncExternalStore } from 'react'
 
-// How the stream shows threads (2026-10-25, the threads discussion in Main):
-// 'threads' is the stream of roots with reply chips, as it always was;
-// 'inline' shows every reply in time order, each naming its thread, the way
-// Discord shows replies. A view, not a structure: threads are unchanged. The
-// reader's choice, kept on this device for every space.
+// How a space shows replies (2026-10-25, the threads discussion in Main):
+// 'threads' is the stream of roots with reply chips and a thread pane, as it
+// always was; 'inline' has no threads at all — every reply shows in the
+// stream in time order under a line quoting what it answers, the way Discord
+// and WhatsApp show replies. A view, not a structure: on the org a reply is a
+// reply either way. Chosen per space, from the space's menu, and kept on this
+// device.
 
 export type StreamView = 'threads' | 'inline'
 
-const STORAGE_KEY = 'spaces:streamView'
-const listeners = new Set<() => void>()
+const PREFIX = 'spaces:streamView:'
+const listeners = new Set<(orgId: string, spaceId: string) => void>()
+const views = new Map<string, StreamView>()
 
-function read(): StreamView {
+const key = (orgId: string, spaceId: string) => `${orgId}/${spaceId}`
+
+function read(k: string): StreamView {
     try {
-        return window.localStorage.getItem(STORAGE_KEY) === 'inline' ? 'inline' : 'threads'
+        return window.localStorage.getItem(PREFIX + k) === 'inline' ? 'inline' : 'threads'
     } catch {
         return 'threads'
     }
 }
 
-let view: StreamView | null = null
-
-export function getStreamView(): StreamView {
-    if (view === null) view = read()
+export function getStreamView(orgId: string, spaceId: string): StreamView {
+    const k = key(orgId, spaceId)
+    let view = views.get(k)
+    if (view === undefined) {
+        view = read(k)
+        views.set(k, view)
+    }
     return view
 }
 
-export function setStreamView(next: StreamView): void {
-    if (next === getStreamView()) return
-    view = next
+export function setStreamView(orgId: string, spaceId: string, next: StreamView): void {
+    if (next === getStreamView(orgId, spaceId)) return
+    const k = key(orgId, spaceId)
+    views.set(k, next)
     try {
-        if (next === 'threads') window.localStorage.removeItem(STORAGE_KEY)
-        else window.localStorage.setItem(STORAGE_KEY, next)
+        if (next === 'threads') window.localStorage.removeItem(PREFIX + k)
+        else window.localStorage.setItem(PREFIX + k, next)
     } catch {
         // Quota/private mode: the choice just does not persist.
     }
-    for (const listener of listeners) listener()
+    for (const listener of listeners) listener(orgId, spaceId)
 }
 
-export function subscribeStreamView(listener: () => void): () => void {
+export function subscribeStreamView(listener: (orgId: string, spaceId: string) => void): () => void {
     listeners.add(listener)
     return () => {
         listeners.delete(listener)
     }
 }
 
-export function useStreamView(): StreamView {
-    return useSyncExternalStore(subscribeStreamView, getStreamView)
+export function useStreamView(orgId: string, spaceId: string): StreamView {
+    return useSyncExternalStore(
+        (notify) => subscribeStreamView(notify),
+        () => getStreamView(orgId, spaceId),
+    )
 }

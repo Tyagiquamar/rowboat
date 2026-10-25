@@ -19,14 +19,17 @@ vi.mock('@/components/spaces/composer', () => ({ Composer: ({ onSend }: { onSend
 vi.mock('@/lib/spaces-post', () => ({ agentOptionsPayload: () => ({}), postStreamMessage: vi.fn(), postInlineReply: vi.fn() }))
 vi.mock('@/components/spaces/message-row', () => ({
     DayDivider: () => null,
-    MessageRow: ({ message, arriving, threadOpen, inThread, continuation, onReplyInThread }: {
-        message: { id: string; body: string }; arriving?: boolean; threadOpen?: boolean; inThread?: { label: string } | null; continuation?: boolean
+    MessageRow: ({ message, arriving, threadOpen, thread, inline, inThread, continuation, onReplyInThread }: {
+        message: { id: string; body: string }; arriving?: boolean; threadOpen?: boolean; thread?: unknown; inline?: boolean
+        inThread?: { author?: string; label: string; onClick: () => void } | null; continuation?: boolean
         onReplyInThread?: (message: { id: string; body: string }) => void
     }) => (
         <div data-mid={message.id} data-arriving={arriving || undefined} data-thread-open={threadOpen || undefined}
-            data-in-thread={inThread?.label} data-continuation={continuation || undefined}>
+            data-thread={thread ? 'yes' : undefined} data-inline={inline || undefined}
+            data-in-thread={inThread ? [inThread.author, inThread.label].filter(Boolean).join(': ') : undefined} data-continuation={continuation || undefined}>
             {message.body}
             {onReplyInThread && <button aria-label={`Reply to ${message.id}`} onClick={() => onReplyInThread(message)} />}
+            {inThread && <button aria-label={`Quote on ${message.id}`} onClick={inThread.onClick} />}
         </div>
     ),
     NewDivider: () => null,
@@ -138,7 +141,7 @@ beforeEach(() => {
 afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
-    setStreamView('threads')
+    setStreamView('org', 'space', 'threads')
 })
 
 function mount(stream: StreamState) {
@@ -323,18 +326,21 @@ describe('inline view (2026-10-25)', () => {
         </SpaceAccessContext.Provider>)
 
     beforeEach(() => {
-        setStreamView('inline')
+        setStreamView('org', 'space', 'inline')
         vi.mocked(markThreadRead).mockClear()
         vi.mocked(postInlineReply).mockClear()
         vi.mocked(postStreamMessage).mockClear()
     })
 
-    it('names each reply\'s thread and starts a new run when the thread changes', async () => {
+    it('quotes what each reply answers, shows no thread chips, and starts a new run when the thread changes', async () => {
         const old = { ...msg(2), id: 'old', body: 'unused' } as spaces.Message
         renderInline([root, msg(3), reply(4, 'root'), reply(5, 'root'), reply(6, 'old-root')], { threadRoots: new Map([['old-root', { ...old, id: 'old-root', body: 'Release notes' }]]) })
         await screen.findByText('body 6')
         const attr = (id: string, name: string) => document.querySelector(`[data-mid="${id}"]`)?.getAttribute(name)
         expect([attr('m3', 'data-in-thread'), attr('r4', 'data-in-thread'), attr('r6', 'data-in-thread')]).toEqual([null, 'Fix the login bug', 'Release notes'])
+        // The root has two replies, but inline there is no thread to open: no chip, and Reply is plain Reply.
+        expect(attr('root', 'data-thread')).toBeNull()
+        expect(attr('root', 'data-inline')).toBe('true')
         // Same author, same thread, a minute apart: one run, its line drawn once.
         expect(attr('r5', 'data-continuation')).toBe('true')
         expect(attr('r5', 'data-in-thread')).toBeNull()
@@ -352,11 +358,11 @@ describe('inline view (2026-10-25)', () => {
         renderInline([root, reply(4, 'root')], {}, onOpenThread)
         fireEvent.click(await screen.findByRole('button', { name: 'Reply to r4' }))
         expect(onOpenThread).not.toHaveBeenCalled()
-        expect(screen.getByText(/Replying in/)).toHaveTextContent('Replying in Fix the login bug')
+        expect(screen.getByText(/Replying to/)).toHaveTextContent('Replying to Fix the login bug')
         fireEvent.click(screen.getByRole('button', { name: 'Send' }))
         await vi.waitFor(() => expect(postInlineReply).toHaveBeenCalledTimes(1))
         expect(vi.mocked(postInlineReply).mock.calls[0]![2]).toEqual({ rootMessageId: 'root', label: 'Fix the login bug' })
-        expect(screen.queryByText(/Replying in/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Replying to/)).not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'Reply to root' }))
         fireEvent.click(screen.getByRole('button', { name: 'Cancel reply' }))
         fireEvent.click(screen.getByRole('button', { name: 'Send' }))
@@ -364,13 +370,32 @@ describe('inline view (2026-10-25)', () => {
         expect(postInlineReply).toHaveBeenCalledTimes(1)
     })
 
-    it('in the threads view, Reply still opens the thread', async () => {
-        setStreamView('threads')
+    it('clicking a quote lands on the message it answers, in the stream', async () => {
+        const onOpenThread = vi.fn()
+        renderInline([root, msg(3), reply(4, 'root')], {}, onOpenThread)
+        fireEvent.click(await screen.findByRole('button', { name: 'Quote on r4' }))
+        await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
+        expect(onOpenThread).not.toHaveBeenCalled()
+        expect(loadStreamAround).not.toHaveBeenCalled()
+    })
+
+    it('with replies in threads, the chips stay and Reply opens the thread', async () => {
+        setStreamView('org', 'space', 'threads')
         const onOpenThread = vi.fn()
         renderInline([root], {}, onOpenThread)
         fireEvent.click(await screen.findByRole('button', { name: 'Reply to root' }))
         expect(onOpenThread).toHaveBeenCalledWith('root')
-        expect(screen.queryByText(/Replying in/)).not.toBeInTheDocument()
+        expect(document.querySelector('[data-mid="root"]')?.getAttribute('data-thread')).toBe('yes')
+        expect(screen.queryByText(/Replying to/)).not.toBeInTheDocument()
+    })
+
+    it('another space\'s choice does not reach this one', async () => {
+        setStreamView('org', 'space', 'threads')
+        setStreamView('org', 'elsewhere', 'inline')
+        renderInline([root, reply(4, 'root')])
+        await screen.findByText('body 4')
+        expect(document.querySelector('[data-mid="root"]')?.getAttribute('data-thread')).toBe('yes')
+        setStreamView('org', 'elsewhere', 'threads')
     })
 })
 
