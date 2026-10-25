@@ -1234,8 +1234,14 @@ function SpacePane({ org, space, selection, onSelect, onSwitchSpace, onOpenSessi
                         selfMemberId={org.memberId} topics={feed.topics} roots={stream.messages} hasMore={stream.hasMore} loadingOlder={stream.loadingOlder}
                         onLoadOlder={() => void loadOlderStreamMessages(org.id, space.id)} direct={isDirect} loaded={feed.loaded} memberNames={memberNames} spaceNames={spaceNames}
                         presence={presence} inline={streamView === 'inline'}
-                        // Inline there is no pane: the row lands on its first message in the stream (navigateToMessage routes it there).
-                        onOpen={(rootMessageId) => (streamView === 'inline' ? navigateToMessage(rootMessageId, rootMessageId) : select({ kind: 'thread', rootMessageId }))} />}
+                        onOpen={(rootMessageId) => {
+                            // Inline (2026-10-25): the row does both — the stream lands on the
+                            // conversation's first message, and the conversation opens beside it
+                            // to focus on. (A narrow window shows the pane first; the stream
+                            // scrolls when it is back.) The quote line above a reply only scrolls.
+                            if (streamView === 'inline') requestJump({ topicId: STREAM_READ_KEY, messageId: rootMessageId })
+                            select({ kind: 'thread', rootMessageId })
+                        }} />}
                     {selection.kind === 'files' && <>
                         {filesError && <div role="alert" className="flex items-center gap-3 px-5 py-2 text-xs text-destructive">
                             Could not refresh files. <button type="button" className="underline" onClick={() => setRefreshTick((tick) => tick + 1)}>Retry</button>

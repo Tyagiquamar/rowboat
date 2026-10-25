@@ -55,12 +55,12 @@ describe('threads view', () => {
         expect(screen.getAllByRole('button', { name: / replies/ }).map((row) => row.textContent)).toEqual([expect.stringMatching(/^Fix the login bug/)])
         expect(screen.queryByRole('button', { name: /^Archived/ })).not.toBeInTheDocument()
     })
-    it('in an inline space a row still opens, as a jump to its message (2026-10-25)', () => {
+    it('in an inline space a row still opens, as a conversation (2026-10-25)', () => {
         const onOpen = mount(vi.fn(), true)
         fireEvent.click(screen.getByRole('button', { name: /^Fix the login bug/ }))
         expect(onOpen).toHaveBeenCalledWith('root-mine')
         fireEvent.contextMenu(screen.getByRole('button', { name: /^Fix the login bug/ }))
-        expect(screen.getByRole('menuitem', { name: 'Go to message' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Open conversation' })).toBeInTheDocument()
     })
     it('pages older threads from the stream', () => {
         const onLoadOlder = vi.fn()
