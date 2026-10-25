@@ -58,7 +58,7 @@ function threadRows(topics: readonly spaces.TopicListing[], roots: readonly Chat
         .sort((a, b) => b.activityAt.localeCompare(a.activityAt) || a.rootMessageId.localeCompare(b.rootMessageId))
 }
 
-export function SpaceThreadsView({ orgId, orgAddress, spaceId, direct, selfMemberId, topics, roots, hasMore, loadingOlder, onLoadOlder, loaded, memberNames, spaceNames, presence, onOpen }: {
+export function SpaceThreadsView({ orgId, orgAddress, spaceId, direct, selfMemberId, topics, roots, hasMore, loadingOlder, onLoadOlder, loaded, memberNames, spaceNames, presence, inline = false, onOpen }: {
     orgId: string
     orgAddress: string
     spaceId: string
@@ -74,6 +74,8 @@ export function SpaceThreadsView({ orgId, orgAddress, spaceId, direct, selfMembe
     memberNames: ReadonlyMap<string, string>
     spaceNames: ReadonlyMap<string, string>
     presence: SpacePresence
+    /** The space shows replies inline (2026-10-25): a row goes to its first message in the stream, not to a pane. */
+    inline?: boolean
     onOpen: (rootMessageId: string) => void
 }) {
     const { writable } = useSpaceAccess()
@@ -125,7 +127,7 @@ export function SpaceThreadsView({ orgId, orgAddress, spaceId, direct, selfMembe
                                 <Button type="submit" size="sm" disabled={pending === topic.id || !renaming.title.trim()}>Save</Button>
                                 <Button type="button" size="sm" variant="ghost" onClick={() => setRenaming(null)}>Cancel</Button>
                             </form> : <button type="button" className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-3 pr-12 text-left"
-                                onMouseEnter={() => prefetchThread(orgId, spaceId, rootMessageId)} onClick={() => onOpen(rootMessageId)}>
+                                onMouseEnter={() => { if (!inline) prefetchThread(orgId, spaceId, rootMessageId) }} onClick={() => onOpen(rootMessageId)}>
                                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                                     <Icon className="size-4" />
                                 </span>
@@ -157,7 +159,7 @@ export function SpaceThreadsView({ orgId, orgAddress, spaceId, direct, selfMembe
                         </div>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
-                        <ContextMenuItem onSelect={() => onOpen(rootMessageId)}><Icon className="mr-2 size-3.5" />Open thread</ContextMenuItem>
+                        <ContextMenuItem onSelect={() => onOpen(rootMessageId)}><Icon className="mr-2 size-3.5" />{inline ? 'Go to message' : 'Open thread'}</ContextMenuItem>
                         <ContextMenuItem onSelect={copyLink}><LinkIcon className="mr-2 size-3.5" />Copy link</ContextMenuItem>
                     </ContextMenuContent>
                 </ContextMenu></li>

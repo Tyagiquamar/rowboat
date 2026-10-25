@@ -1233,7 +1233,9 @@ function SpacePane({ org, space, selection, onSelect, onSwitchSpace, onOpenSessi
                     {selection.kind === 'discussions' && <SpaceThreadsView orgId={org.id} orgAddress={org.address} spaceId={space.id}
                         selfMemberId={org.memberId} topics={feed.topics} roots={stream.messages} hasMore={stream.hasMore} loadingOlder={stream.loadingOlder}
                         onLoadOlder={() => void loadOlderStreamMessages(org.id, space.id)} direct={isDirect} loaded={feed.loaded} memberNames={memberNames} spaceNames={spaceNames}
-                        presence={presence} onOpen={(rootMessageId) => select({ kind: 'thread', rootMessageId })} />}
+                        presence={presence} inline={streamView === 'inline'}
+                        // Inline there is no pane: the row lands on its first message in the stream (navigateToMessage routes it there).
+                        onOpen={(rootMessageId) => (streamView === 'inline' ? navigateToMessage(rootMessageId, rootMessageId) : select({ kind: 'thread', rootMessageId }))} />}
                     {selection.kind === 'files' && <>
                         {filesError && <div role="alert" className="flex items-center gap-3 px-5 py-2 text-xs text-destructive">
                             Could not refresh files. <button type="button" className="underline" onClick={() => setRefreshTick((tick) => tick + 1)}>Retry</button>

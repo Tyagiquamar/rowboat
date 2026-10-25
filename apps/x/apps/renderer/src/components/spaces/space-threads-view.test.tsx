@@ -24,11 +24,11 @@ const roots = [
     root('root-quiet', 'me', 'No replies here', 0),
     root('root-archived', 'me', 'Archived root', 1, '2026-09-14T10:00:00Z'),
 ]
-function mount(onLoadOlder = vi.fn()) {
+function mount(onLoadOlder = vi.fn(), inline = false) {
     const onOpen = vi.fn()
     render(<SpaceThreadsView orgId="org" orgAddress="spaces.example.com" spaceId="dm" direct selfMemberId="me" topics={topics} roots={roots}
         hasMore loadingOlder={false} onLoadOlder={onLoadOlder} loaded memberNames={new Map([['me', 'Arjun'], ['ana', 'Ana']])} spaceNames={new Map()}
-        presence={{ working: new Map(), typing: new Map(), here: [] }} onOpen={onOpen} />)
+        presence={{ working: new Map(), typing: new Map(), here: [] }} inline={inline} onOpen={onOpen} />)
     return onOpen
 }
 function openOptions(name: string) {
@@ -54,6 +54,13 @@ describe('threads view', () => {
         fireEvent.click(screen.getByRole('button', { name: 'By me' }))
         expect(screen.getAllByRole('button', { name: / replies/ }).map((row) => row.textContent)).toEqual([expect.stringMatching(/^Fix the login bug/)])
         expect(screen.queryByRole('button', { name: /^Archived/ })).not.toBeInTheDocument()
+    })
+    it('in an inline space a row still opens, as a jump to its message (2026-10-25)', () => {
+        const onOpen = mount(vi.fn(), true)
+        fireEvent.click(screen.getByRole('button', { name: /^Fix the login bug/ }))
+        expect(onOpen).toHaveBeenCalledWith('root-mine')
+        fireEvent.contextMenu(screen.getByRole('button', { name: /^Fix the login bug/ }))
+        expect(screen.getByRole('menuitem', { name: 'Go to message' })).toBeInTheDocument()
     })
     it('pages older threads from the stream', () => {
         const onLoadOlder = vi.fn()
