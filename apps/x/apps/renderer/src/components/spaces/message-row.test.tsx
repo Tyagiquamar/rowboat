@@ -77,6 +77,14 @@ describe('conversation message interactions', () => {
         expect(screen.getByText(message.body)).toBeInTheDocument()
     })
 
+    it('names an inline reply\'s thread above it and opens that thread (2026-10-25)', () => {
+        const onOpenThread = vi.fn()
+        const reply = { ...message, id: 'reply-1', threadRoot: 'root-1' } as spaces.Message
+        render(<MessageRow message={reply} memberNames={memberNames} continuation={false} onOpenThread={onOpenThread} inThread={{ label: 'Fix the login bug' }} />)
+        fireEvent.click(screen.getByRole('button', { name: 'In Fix the login bug' }))
+        expect(onOpenThread).toHaveBeenCalledWith('root-1')
+    })
+
     it('opens the existing root from the reply summary without making body clicks navigate', () => {
         const onOpenThread = vi.fn()
         render(<MessageRow message={message} memberNames={memberNames} continuation={false} onOpenThread={onOpenThread}

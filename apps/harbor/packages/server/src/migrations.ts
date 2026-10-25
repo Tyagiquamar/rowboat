@@ -1090,6 +1090,12 @@ export const MIGRATIONS: Migration[] = [
     id: '045-message-summary',
     statements: [`alter table messages add column if not exists summary text`],
   },
+  {
+    // The inline view (2026-10-25): the stream read with replies pages every
+    // message of a space by offset, which the roots-only index cannot serve.
+    id: '046-messages-space-offset',
+    statements: [`create index if not exists messages_space_offset on messages (space_id, stream_offset)`],
+  },
 ];
 
 export async function migrate(db: SqlDb): Promise<void> {

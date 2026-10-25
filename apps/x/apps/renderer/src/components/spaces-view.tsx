@@ -36,6 +36,7 @@ import { ServerSwitcher } from '@/components/spaces/server-switcher'
 import { ActivityView, type ActivityTarget } from '@/components/spaces/activity-view'
 import { OrgRail, SpaceRail } from '@/components/spaces/space-rail'
 import { SpaceContentTabs } from '@/components/spaces/space-content-tabs'
+import { StreamViewToggle } from '@/components/spaces/stream-view-toggle'
 import { SpaceThreadsView } from '@/components/spaces/space-threads-view'
 import { SpaceFilesView } from '@/components/spaces/space-files-view'
 import { SpaceSearch } from '@/components/spaces/space-search'
@@ -1117,6 +1118,7 @@ function SpacePane({ org, space, selection, onSelect, onSwitchSpace, onOpenSessi
 
                 <SpaceContentTabs orgId={org.id} spaceId={space.id} direct={isDirect} topics={feed.topics}
                     entries={entries} unreadAssetIds={unreadAssetIds} selection={selection} onSelect={select} />
+                {(selection.kind === 'general' || selection.kind === 'thread') && <StreamViewToggle />}
 
                 <div className="min-w-0 flex-1" />
 
